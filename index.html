@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Berkeley 3:00 PM Dining Map — 2060 Fourth St</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 14px;
+      padding: 2px;
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.22);
+    }
+    .leaflet-popup-content {
+      margin: 12px 14px;
+      line-height: 1.4;
+    }
+    .marker-pin {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 12px;
+      color: white;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.32);
+      border: 2.5px solid white;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .marker-pin.active-pin {
+      transform: scale(1.3);
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.5), 0 6px 14px rgba(0,0,0,0.38);
+      z-index: 1000 !important;
+    }
+    .origin-pulse {
+      animation: pulse-ring 2s infinite;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.65); }
+      70% { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+    }
+    /* Position Leaflet zoom controls neatly below top floating bar on desktop, or bottom right */
+    .leaflet-top.leaflet-left {
+      top: 68px;
+      left: 6px;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-900 relative w-screen h-screen overflow-hidden select-none">
+
+  <!-- Full-Screen Map Canvas -->
+  <div id="map" class="fixed inset-0 w-full h-full z-0"></div>
+
+  <!-- Minimal Floating Top Bar (View Switcher + Filter Pills + Map Tools) -->
+  <div class="fixed top-3 left-3 right-3 z-[500] pointer-events-none flex flex-col gap-2">
+    <div class="flex items-center justify-between gap-2 max-w-6xl mx-auto w-full">
+
+      <!-- View Mode Segmented Pill (Map vs Ranked List Drawer) -->
+      <div class="pointer-events-auto inline-flex items-center bg-white/95 backdrop-blur-md p-1 rounded-full shadow-lg border border-slate-200/80 shrink-0">
+        <button id="tabMapBtn" type="button" class="px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+          <span>Map</span>
+        </button>
+        <button id="tabListBtn" type="button" class="px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 text-slate-700 hover:text-slate-900">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+          <span>Spots (<span id="drawerCountBadge">18</span>)</span>
+        </button>
+      </div>
+
+      <!-- Compact Scrollable Filter Chips -->
+      <div class="pointer-events-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar bg-white/95 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-slate-200/80 max-w-full">
+        <button data-filter="all" class="filter-btn px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition bg-slate-900 text-white">
+          All (<span id="countAll">18</span>)
+        </button>
+        <button data-filter="open3pm" class="filter-btn px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition text-slate-700 hover:bg-slate-100">
+          Open 3 PM (<span id="countOpen">14</span>)
+        </button>
+        <button data-filter="biryani" class="filter-btn px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition text-amber-800 bg-amber-50/80 hover:bg-amber-100">
+          Biryani (<span id="countBiryani">8</span>)
+        </button>
+        <button data-filter="mediterranean" class="filter-btn px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition text-teal-800 bg-teal-50/80 hover:bg-teal-100">
+          Med / Persian (<span id="countMed">10</span>)
+        </button>
+        <button data-filter="walkable" class="filter-btn px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition text-blue-800 bg-blue-50/80 hover:bg-blue-100">
+          Walk ≤0.5m (<span id="countWalk">6</span>)
+        </button>
+      </div>
+
+      <!-- Compact Map Tools (Fit All + Basemap Selector) -->
+      <div class="pointer-events-auto flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1 rounded-full shadow-lg border border-slate-200/80 shrink-0">
+        <button id="resetViewBtn" type="button" title="Fit all pins on screen" class="px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+          <span class="hidden sm:inline">Fit All</span>
+        </button>
+        <select id="basemapSelect" aria-label="Map Style" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 focus:outline-none cursor-pointer">
+          <option value="usgs" selected>USGS Topo</option>
+          <option value="esri">Esri Street</option>
+          <option value="osm">OSM Street</option>
+          <option value="vector">Vector Grid</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Compact Floating Legend Pill (Bottom Left) -->
+  <div class="fixed bottom-3 left-3 z-[400] pointer-events-auto bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl px-3 py-2 shadow-lg flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-slate-700 max-w-[calc(100vw-24px)]">
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>2060 4th St</span>
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block"></span>Biryani</span>
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block"></span>Persian Rice</span>
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-teal-600 inline-block"></span>Mediterranean</span>
+    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>Closed 3 PM</span>
+    <label class="inline-flex items-center gap-1 cursor-pointer text-slate-600 hover:text-slate-900 ml-1 pl-2 border-l border-slate-200">
+      <input id="toggleRings" type="checkbox" checked class="rounded text-blue-600 w-3 h-3" />
+      <span>0.5m walk ring</span>
+    </label>
+    <label class="inline-flex items-center gap-1 cursor-pointer text-slate-600 hover:text-slate-900">
+      <input id="toggleRouteLine" type="checkbox" checked class="rounded text-amber-600 w-3 h-3" />
+      <span>Route</span>
+    </label>
+  </div>
+
+  <!-- Selected Spot Floating Card (Bottom Center/Right on Map) -->
+  <div id="activeSpotBanner" class="hidden fixed bottom-14 sm:bottom-4 right-3 left-3 sm:left-auto z-[450] pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-3.5 shadow-2xl sm:w-80 transition-all">
+    <div class="flex items-start justify-between gap-2">
+      <div>
+        <span id="bannerBadge" class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide"></span>
+        <h3 id="bannerTitle" class="font-bold text-slate-900 text-sm mt-1"></h3>
+        <p id="bannerAddress" class="text-[11px] text-slate-500 mt-0.5"></p>
+      </div>
+      <button id="closeBannerBtn" type="button" class="text-slate-400 hover:text-slate-700 p-1 rounded-full hover:bg-slate-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+    <p id="bannerHighlight" class="text-xs text-slate-700 mt-2 bg-slate-50 p-2 rounded-xl border border-slate-100 leading-snug"></p>
+    <div class="mt-2.5 flex items-center gap-2">
+      <a id="bannerDirectionsLink" href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" class="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm">
+        Google Maps Route ↗
+      </a>
+      <a id="bannerWebsiteLink" href="https://www.google.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+        Menu / Site
+      </a>
+    </div>
+  </div>
+
+  <!-- Slide-Over Ranked List Drawer (Toggled via "Spots (18)" button, works cleanly on Mobile & Desktop) -->
+  <aside id="listDrawer" class="hidden fixed inset-y-0 left-0 right-0 sm:right-auto sm:w-96 z-[550] bg-white/95 backdrop-blur-md shadow-2xl border-r border-slate-200 flex flex-col">
+    <div class="p-3.5 border-b border-slate-200 flex items-center justify-between gap-2 bg-white">
+      <div>
+        <h2 class="text-sm font-bold text-slate-900">Ranked Options from 2060 4th St</h2>
+        <p id="resultsStatus" class="text-[11px] text-slate-500">Showing 18 spots (closest to furthest)</p>
+      </div>
+      <button id="closeDrawerBtn" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">
+        <span>Back to Map</span>
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+
+    <div class="px-3.5 py-2 bg-slate-50 border-b border-slate-200">
+      <div class="relative">
+        <input id="searchInput" type="text" placeholder="Filter by dish, name, or street..." class="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 transition" />
+        <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      </div>
+    </div>
+
+    <div id="spotList" class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar select-text"></div>
+  </aside>
+
+  <script>
+    const ORIGIN = {
+      name: "Starting Point: 2060 Fourth St",
+      address: "2060 Fourth St, Berkeley, CA 94710",
+      lat: 37.8669,
+      lng: -122.3001
+    };
+
+    const RESTAURANTS = [
+      {
+        id: "zut",
+        rank: 1,
+        name: "Zut! On Fourth",
+        address: "1820 Fourth St, Berkeley, CA 94710",
+        lat: 37.8693,
+        lng: -122.3011,
+        distanceMiles: 0.2,
+        travelText: "0.2 mi · 5 min walk",
+        walkable: true,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "California-Mediterranean",
+        rating: "4.1 ★ (743)",
+        satHours: "11:30 AM – 9:00 PM",
+        highlight: "Sunny 4th St patio serving a Mediterranean meze platter, grilled meats, and seafood. No Biryani.",
+        website: "http://www.zutonfourth.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1820+Fourth+St,+Berkeley,+CA+94710,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJi4EJvdx-hYARd4zGzjfyEAQ!3e2"
+      },
+      {
+        id: "divan",
+        rank: 2,
+        name: "Divan",
+        address: "1788 Fourth St, Berkeley, CA 94710",
+        lat: 37.8701,
+        lng: -122.3014,
+        distanceMiles: 0.3,
+        travelText: "0.3 mi · 6 min walk",
+        walkable: true,
+        openAt3pm: false,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "closed3pm",
+        cuisine: "Turkish Mediterranean",
+        rating: "4.8 ★ (137)",
+        satHours: "11:00 AM – 2:30 PM, 5:00 – 8:45 PM",
+        highlight: "CLOSED 2:30–5:00 PM. Upscale Turkish kebabs, mezze trio, pide & Ottoman rice pilaf if you shift meal time.",
+        website: "https://divanberkeley.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1788+Fourth+St,+Berkeley,+CA+94710,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJVVXBnNx-hYARJItfFQSPtl0!3e2"
+      },
+      {
+        id: "uqbar",
+        rank: 3,
+        name: "UQBAR Mediterranean Cafe",
+        address: "2265 Fifth St, Berkeley, CA 94710",
+        lat: 37.8639,
+        lng: -122.2982,
+        distanceMiles: 0.3,
+        travelText: "0.3 mi · 7 min walk",
+        walkable: true,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Mediterranean Cafe",
+        rating: "4.9 ★ (122)",
+        satHours: "8:00 AM – 4:00 PM (Closes at 4 PM)",
+        highlight: "House-baked flatbread with labneh, chicken/lamb hummus, green shakshuka, and mezza plates. No Biryani.",
+        website: "https://www.uqbarthecafe.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2265+Fifth+St,+Berkeley,+CA+94710,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJq6pf7-h-hYARtMG1bcRxnKg!3e2"
+      },
+      {
+        id: "viks",
+        rank: 4,
+        name: "Viks Chaat",
+        address: "2390 Fourth St, Berkeley, CA 94710",
+        lat: 37.8617,
+        lng: -122.2981,
+        distanceMiles: 0.4,
+        travelText: "0.4 mi · 9 min walk",
+        walkable: true,
+        openAt3pm: true,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "biryani",
+        cuisine: "Indian Street Food & Canteen",
+        rating: "4.1 ★ (4,469)",
+        satHours: "11:00 AM – 7:30 PM",
+        highlight: "CLOSEST BIRYANI: Serves hearty Chicken & Lamb Biryani, tandoori chicken, and chaat in a lively hall with parking.",
+        website: "http://vikschaat.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2390+Fourth+St,+Berkeley,+CA+94710,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJs8kQTO9-hYARVVJeChh02sw!3e2"
+      },
+      {
+        id: "kabana",
+        rank: 5,
+        name: "Kabana Restaurant",
+        address: "1025 University Ave, Berkeley, CA 94710",
+        lat: 37.8691,
+        lng: -122.2941,
+        distanceMiles: 0.5,
+        travelText: "0.5 mi · 11 min walk",
+        walkable: true,
+        openAt3pm: false,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "closed3pm",
+        cuisine: "Pakistani & North Indian",
+        rating: "4.1 ★ (246)",
+        satHours: "11:30 AM – 3:00 PM, 5:00 – 9:00 PM",
+        highlight: "CLOSES AT 3:00 PM FOR BREAK. Famous for Pakistani Chicken & Veggie Biryani, seekh kebabs, and fresh naan.",
+        website: "https://kabanaca.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1025+University+Ave,+Berkeley,+CA+94710,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJ3_ia8sF-hYARQEWkiIalr-4!3e2"
+      },
+      {
+        id: "middleeast",
+        rank: 6,
+        name: "Middle East Cafe & Market",
+        address: "2056 San Pablo Ave, Berkeley, CA 94702",
+        lat: 37.8680,
+        lng: -122.2921,
+        distanceMiles: 0.5,
+        travelText: "0.5 mi · 11 min walk / 3 min drive",
+        walkable: true,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "crossover",
+        cuisine: "Persian / Middle Eastern",
+        rating: "4.7 ★ (104)",
+        satHours: "11:00 AM – 9:00 PM (Happy Hour 3–6 PM)",
+        highlight: "BEST CROSSOVER: Aromatic saffron basmati rice (Baghali Polo w/ lamb shank, Zereshk Polo, crispy Tahdig) + kebabs.",
+        website: "http://www.middleeastmarket.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2056+San+Pablo+Ave,+Berkeley,+CA+94702,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJO8-ndep-hYARAkNoR4mAA08!3e0"
+      },
+      {
+        id: "noor",
+        rank: 7,
+        name: "Noor Indian Fusion Kitchen",
+        address: "1398 University Ave, Berkeley, CA 94702",
+        lat: 37.8702,
+        lng: -122.2849,
+        distanceMiles: 0.9,
+        travelText: "0.9 mi · 4 min drive",
+        walkable: false,
+        openAt3pm: false,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "closed3pm",
+        cuisine: "Indian Fusion",
+        rating: "4.6 ★ (383)",
+        satHours: "11:00 AM – 2:30 PM, 4:00 – 9:30 PM",
+        highlight: "CLOSED 2:30–4:00 PM. Highly rated Dum Biryani (Veggie, Chicken, Lamb) and garlic cheese naan if you go at 4 PM.",
+        website: "https://noorfusionkitchen.com/berkeley-dine-in-and-takeout?utm_source=google",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1398+University+Ave,+Berkeley,+CA+94702,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJdaLOkJV-hYARJIT53Qtr4Ww!3e0"
+      },
+      {
+        id: "pochys",
+        rank: 8,
+        name: "Pochys / Bangalore Blues",
+        address: "1889 Solano Ave, Berkeley, CA 94707",
+        lat: 37.8914,
+        lng: -122.2768,
+        distanceMiles: 1.4,
+        travelText: "1.4 mi · 7 min drive",
+        walkable: false,
+        openAt3pm: false,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "closed3pm",
+        cuisine: "South Indian (Bengaluru Style)",
+        rating: "4.5 ★ (138)",
+        satHours: "11:00 AM – 2:30/3:00 PM, 4:00/4:30 – 9:00 PM",
+        highlight: "CLOSED 3:00–4:00 PM. Known for Karnataka-style Donne Chicken Biryani, dosas, and kati rolls.",
+        website: "http://www.pochys.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1889+Solano+Ave,+Berkeley,+CA+94707,+USA"
+      },
+      {
+        id: "gusto",
+        rank: 9,
+        name: "Gusto",
+        address: "1986 Shattuck Ave., Berkeley, CA 94704",
+        lat: 37.8728,
+        lng: -122.2687,
+        distanceMiles: 1.8,
+        travelText: "1.8 mi · 7 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Algerian & Mediterranean",
+        rating: "4.8 ★ (276)",
+        satHours: "11:00 AM – 9:00 PM",
+        highlight: "Saffron rice platters with Joojeh & Koobideh kebabs, lamb/merguez couscous, and Algerian Tajine Zitoune. No Biryani.",
+        website: "https://pos.chowbus.com/online-ordering/store/Gusto/23464?referrer=google_food_ordering",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1986+Shattuck+Ave.,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJBYOd8J5-hYAR7HWtrpAutHw!3e0"
+      },
+      {
+        id: "kingofkabab",
+        rank: 10,
+        name: "King of Kabab",
+        address: "3043 San Pablo Ave, Berkeley, CA 94702",
+        lat: 37.8515,
+        lng: -122.2861,
+        distanceMiles: 1.9,
+        travelText: "1.9 mi · 6 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Mediterranean & Halal Gyro",
+        rating: "4.6 ★ (444)",
+        satHours: "11:00 AM – 9:00 PM",
+        highlight: "Spit-roasted lamb/beef gyro & chicken shawarma over seasoned rice with hummus, stuffed falafel, and patio seating.",
+        website: "https://www.kingofkabab.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/3043+San+Pablo+Ave,+Berkeley,+CA+94702,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJD329JWB-hYAR--EvvcGWjt0!3e0"
+      },
+      {
+        id: "razans",
+        rank: 11,
+        name: "Razan's Organic Kitchen",
+        address: "2119 Kittredge St, Berkeley, CA 94704",
+        lat: 37.8685,
+        lng: -122.2676,
+        distanceMiles: 2.1,
+        travelText: "2.1 mi · 8 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Organic Middle Eastern",
+        rating: "4.5 ★ (315)",
+        satHours: "11:00 AM – 8:00 PM",
+        highlight: "Organic Mediterranean combination plates, Jordanian falafel wraps, and chicken/lamb shawarma. No Biryani.",
+        website: "https://razankitchen.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2119+Kittredge+St,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJHwTACp1-hYARgd4yf_uT-f4!3e0"
+      },
+      {
+        id: "eastbayspice",
+        rank: 12,
+        name: "East Bay Spice Company",
+        address: "2142 Oxford St, Berkeley, CA 94704",
+        lat: 37.8703,
+        lng: -122.2662,
+        distanceMiles: 2.1,
+        travelText: "2.1 mi · 9 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "biryani",
+        cuisine: "Indian Gastropub & Tandoor",
+        rating: "4.4 ★ (666)",
+        satHours: "2:00 PM – 2:00 AM",
+        highlight: "SERVES BIRYANI: Clay-pot Handi Lamb Biryani topped with fresh naan, tandoori kebabs, tikka flatbreads & craft cocktails.",
+        website: "https://eastbayspiceco.com/?utm_source=google",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2142+Oxford+St,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJh7wpkJ1-hYAROpiqnL8uSWg!3e0"
+      },
+      {
+        id: "fourdreams",
+        rank: 13,
+        name: "4 Dreams Nepali & Indian Cuisine",
+        address: "2429 Shattuck Ave., Berkeley, CA 94704",
+        lat: 37.8650,
+        lng: -122.2673,
+        distanceMiles: 2.2,
+        travelText: "2.2 mi · 8 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "biryani",
+        cuisine: "Nepali & Indian",
+        rating: "4.8 ★ (207)",
+        satHours: "11:00 AM – 9:30 PM",
+        highlight: "SERVES BIRYANI: Chicken, Lamb & Veggie Biryani with customizable spice levels, lamb momos, and fresh garlic naan.",
+        website: "https://4dreamscuisine.com/?utm_source=google",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2429+Shattuck+Ave.,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJlc4z6oJ-hYARF92oulQadsU!3e0"
+      },
+      {
+        id: "rojbas",
+        rank: 14,
+        name: "Rojbas Mediterranean Grill",
+        address: "1901 University Ave, Berkeley, CA 94704",
+        lat: 37.8719,
+        lng: -122.2729,
+        distanceMiles: 2.2,
+        travelText: "2.2 mi · 9 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Kurdish & Turkish Mediterranean",
+        rating: "4.6 ★ (411)",
+        satHours: "11:00 AM – 9:00 PM",
+        highlight: "Family-owned spot with rotisserie gyro, salmon & chicken shish kebabs, rice pilaf, hummus, and Kurdish baklava.",
+        website: "https://www.berkeleyrojbas.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/1901+University+Ave,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJ1Z_dHZl-hYARAoR2LmKKvJ4!3e0"
+      },
+      {
+        id: "himalayanbite",
+        rank: 15,
+        name: "Himalayan Bite",
+        address: "2400 Telegraph Ave, Berkeley, CA 94704",
+        lat: 37.8665,
+        lng: -122.2591,
+        distanceMiles: 2.7,
+        travelText: "2.7 mi · 11 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "biryani",
+        cuisine: "Himalayan & Indian",
+        rating: "4.7 ★ (441)",
+        satHours: "11:00 AM – 11:00 PM",
+        highlight: "SERVES BIRYANI: Aromatic Chicken, Lamb & Vegetable Biryani, tandoori momos, korma, and cheese naan.",
+        website: "https://himalayanbitee.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2400+Telegraph+Ave,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJh70XJi98hYARTKUO_L8GmjU!3e0"
+      },
+      {
+        id: "dyar",
+        rank: 16,
+        name: "D'Yar Mediterranean",
+        address: "2511 Durant Ave, Berkeley, CA 94704",
+        lat: 37.8677,
+        lng: -122.2582,
+        distanceMiles: 2.7,
+        travelText: "2.7 mi · 12 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Palestinian / Mediterranean",
+        rating: "4.2 ★ (344)",
+        satHours: "11:00 AM – 12:00 AM",
+        highlight: "Palestinian recipes including shawarma & kefta kebab rice bowls, hummus with lamb, falafel, and tabouli. No Biryani.",
+        website: "https://dyarberkeley.com/?utm_source=google",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2511+Durant+Ave,+Berkeley,+CA+94704,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJKeb-QC98hYARceIJWJWFunk!3e0"
+      },
+      {
+        id: "lamed",
+        rank: 17,
+        name: "La Mediterranee",
+        address: "2936 College Ave, Berkeley, CA 94705",
+        lat: 37.8576,
+        lng: -122.2533,
+        distanceMiles: 3.5,
+        travelText: "3.5 mi · 12 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: false,
+        isMediterranean: true,
+        categoryType: "mediterranean",
+        cuisine: "Armenian & Lebanese Mediterranean",
+        rating: "4.3 ★ (815)",
+        satHours: "11:30 AM – 9:00 PM",
+        highlight: "Iconic Elmwood spot serving Mediterranean meze platters, pomegranate chicken over rice, and lamb shawarma. No Biryani.",
+        website: "http://cafelamedberkeley.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2936+College+Ave,+Berkeley,+CA+94705,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJLYFRjc19hYARO0CZ1xkxZIY!3e0"
+      },
+      {
+        id: "houseofcurries",
+        rank: 18,
+        name: "House of Curries",
+        address: "2984 College Ave, Berkeley, CA 94705",
+        lat: 37.8565,
+        lng: -122.2531,
+        distanceMiles: 3.5,
+        travelText: "3.5 mi · 12 min drive",
+        walkable: false,
+        openAt3pm: true,
+        hasBiryani: true,
+        isMediterranean: false,
+        categoryType: "biryani",
+        cuisine: "Halal Pakistani & Indian",
+        rating: "4.1 ★ (463)",
+        satHours: "11:00 AM – 10:00 PM",
+        highlight: "SERVES BIRYANI: Halal Chicken, Lamb, Beef & Veggie Biryani topped with caramelized onions, plus complimentary hot chai.",
+        website: "http://www.houseofcurries.com/",
+        directionsUrl: "https://www.google.com/maps/dir/2060+Fourth+St,+Berkeley,+CA+94710,+USA/2984+College+Ave,+Berkeley,+CA+94705,+USA/data=!4m8!4m7!1m2!1m1!19sChIJ8UcXUt1-hYARdSp0J-bUsEk!1m2!1m1!19sChIJ1wsxCM59hYARxgnY_AJotb8!3e0"
+      }
+    ];
+
+    const CATEGORY_META = {
+      biryani: {
+        pinBg: "#d97706",
+        badgeBg: "bg-amber-100 text-amber-900 border border-amber-300",
+        label: "Serves Biryani · Open 3 PM"
+      },
+      crossover: {
+        pinBg: "#7c3aed",
+        badgeBg: "bg-purple-100 text-purple-900 border border-purple-300",
+        label: "Persian Saffron Rice · Open 3 PM"
+      },
+      mediterranean: {
+        pinBg: "#0d9488",
+        badgeBg: "bg-teal-100 text-teal-900 border border-teal-300",
+        label: "Mediterranean · Open 3 PM"
+      },
+      closed3pm: {
+        pinBg: "#f43f5e",
+        badgeBg: "bg-rose-100 text-rose-900 border border-rose-300",
+        label: "Closed @ 3 PM (Break)"
+      }
+    };
+
+    let currentFilter = "all";
+    let searchQuery = "";
+    let activeSpotId = null;
+    let map = null;
+    let markersById = {};
+    let walkCircle = null;
+    let routeLine = null;
+    let currentTileLayer = null;
+    let vectorOverlayGroup = null;
+
+    const TILE_PROVIDERS = {
+      usgs: {
+        url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: "Tiles courtesy of the U.S. Geological Survey",
+          maxNativeZoom: 16,
+          maxZoom: 19
+        }
+      },
+      esri: {
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        options: {
+          attribution: "Tiles &copy; Esri",
+          maxZoom: 19,
+          referrerPolicy: "no-referrer"
+        }
+      },
+      osm: {
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        options: {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 19,
+          referrerPolicy: "origin"
+        }
+      }
+    };
+
+    function buildBerkeleyVectorGrid() {
+      const group = L.layerGroup();
+
+      L.polygon([
+        [37.910, -122.330],
+        [37.910, -122.306],
+        [37.885, -122.307],
+        [37.865, -122.306],
+        [37.840, -122.304],
+        [37.840, -122.330]
+      ], { color: "#93c5fd", weight: 1, fillColor: "#dbeafe", fillOpacity: 0.7, interactive: false }).addTo(group);
+
+      L.polygon([
+        [37.8652, -122.3025],
+        [37.8652, -122.3005],
+        [37.8540, -122.2975],
+        [37.8540, -122.3000]
+      ], { color: "#93c5fd", weight: 1, fillColor: "#bfdbfe", fillOpacity: 0.65, interactive: false }).addTo(group);
+
+      L.polygon([
+        [37.8758, -122.2662],
+        [37.8758, -122.2510],
+        [37.8692, -122.2510],
+        [37.8692, -122.2662]
+      ], { color: "#86efac", weight: 1.5, dashArray: "4,4", fillColor: "#dcfce7", fillOpacity: 0.55, interactive: false }).addTo(group);
+
+      const streets = [
+        { name: "Fourth St", weight: 4, color: "#94a3b8", coords: [[37.8760, -122.3033], [37.8693, -122.3011], [37.8669, -122.3001], [37.8617, -122.2981], [37.8570, -122.2962]], labelPos: [37.8732, -122.3022] },
+        { name: "San Pablo Ave", weight: 4.5, color: "#94a3b8", coords: [[37.9000, -122.2990], [37.8680, -122.2921], [37.8515, -122.2861], [37.8400, -122.2820]], labelPos: [37.8790, -122.2950] },
+        { name: "University Ave", weight: 5, color: "#94a3b8", coords: [[37.8662, -122.3035], [37.8673, -122.2998], [37.8691, -122.2941], [37.8702, -122.2849], [37.8719, -122.2729], [37.8726, -122.2662]], labelPos: [37.8698, -122.2885] },
+        { name: "Shattuck Ave", weight: 4.5, color: "#94a3b8", coords: [[37.8940, -122.2715], [37.8728, -122.2687], [37.8650, -122.2673], [37.8500, -122.2655]], labelPos: [37.8810, -122.2698] },
+        { name: "Telegraph Ave", weight: 4, color: "#94a3b8", coords: [[37.8692, -122.2591], [37.8665, -122.2591], [37.8500, -122.2602]], labelPos: [37.8610, -122.2595] },
+        { name: "College Ave", weight: 4, color: "#94a3b8", coords: [[37.8692, -122.2542], [37.8576, -122.2533], [37.8480, -122.2525]], labelPos: [37.8625, -122.2536] },
+        { name: "Solano Ave", weight: 3.5, color: "#94a3b8", coords: [[37.8905, -122.2985], [37.8914, -122.2768], [37.8918, -122.2710]], labelPos: [37.8911, -122.2865] }
+      ];
+
+      streets.forEach(st => {
+        L.polyline(st.coords, { color: st.color, weight: st.weight + 2, opacity: 0.9, interactive: false }).addTo(group);
+        L.polyline(st.coords, { color: "#ffffff", weight: Math.max(1.5, st.weight - 1), opacity: 0.95, interactive: false }).addTo(group);
+        if (st.labelPos) {
+          L.marker(st.labelPos, {
+            interactive: false,
+            icon: L.divIcon({
+              className: "",
+              html: `<div style="font-size:10px;font-weight:600;color:#475569;background:rgba(255,255,255,0.85);padding:1px 4px;border-radius:3px;white-space:nowrap;border:1px solid #e2e8f0;">${st.name}</div>`,
+              iconSize: [90, 14],
+              iconAnchor: [45, 7]
+            })
+          }).addTo(group);
+        }
+      });
+
+      return group;
+    }
+
+    function setBasemap(mode) {
+      if (!map) return;
+      if (currentTileLayer) {
+        map.removeLayer(currentTileLayer);
+        currentTileLayer = null;
+      }
+      if (vectorOverlayGroup) {
+        map.removeLayer(vectorOverlayGroup);
+      }
+
+      const mapContainer = document.getElementById("map");
+      if (mode === "vector") {
+        mapContainer.style.background = "#f8fafc";
+        if (!vectorOverlayGroup) vectorOverlayGroup = buildBerkeleyVectorGrid();
+        vectorOverlayGroup.addTo(map);
+      } else {
+        mapContainer.style.background = "#e2e8f0";
+        const cfg = TILE_PROVIDERS[mode] || TILE_PROVIDERS.usgs;
+        currentTileLayer = L.tileLayer(cfg.url, cfg.options).addTo(map);
+        currentTileLayer.on("tileerror", () => {
+          if (vectorOverlayGroup && !map.hasLayer(vectorOverlayGroup)) {
+            vectorOverlayGroup.addTo(map);
+          }
+        });
+      }
+    }
+
+    function initBasemapLayers() {
+      vectorOverlayGroup = buildBerkeleyVectorGrid();
+      const selectEl = document.getElementById("basemapSelect");
+      setBasemap(selectEl ? selectEl.value : "usgs");
+    }
+
+    function updateFilterCounts() {
+      document.getElementById("countAll").textContent = RESTAURANTS.length;
+      document.getElementById("countOpen").textContent = RESTAURANTS.filter(r => r.openAt3pm).length;
+      document.getElementById("countBiryani").textContent = RESTAURANTS.filter(r => r.hasBiryani).length;
+      document.getElementById("countMed").textContent = RESTAURANTS.filter(r => r.isMediterranean).length;
+      document.getElementById("countWalk").textContent = RESTAURANTS.filter(r => r.walkable).length;
+    }
+
+    function getFilteredRestaurants() {
+      return RESTAURANTS.filter(item => {
+        if (currentFilter === "open3pm" && !item.openAt3pm) return false;
+        if (currentFilter === "biryani" && !item.hasBiryani) return false;
+        if (currentFilter === "mediterranean" && !item.isMediterranean) return false;
+        if (currentFilter === "walkable" && !item.walkable) return false;
+
+        if (searchQuery.trim() !== "") {
+          const q = searchQuery.toLowerCase();
+          const hay = `${item.name} ${item.cuisine} ${item.address} ${item.highlight}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function setDrawerOpen(isOpen) {
+      const drawer = document.getElementById("listDrawer");
+      const tabMapBtn = document.getElementById("tabMapBtn");
+      const tabListBtn = document.getElementById("tabListBtn");
+
+      if (isOpen) {
+        drawer.classList.remove("hidden");
+        tabListBtn.className = "px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm";
+        tabMapBtn.className = "px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 text-slate-700 hover:text-slate-900";
+      } else {
+        drawer.classList.add("hidden");
+        tabMapBtn.className = "px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm";
+        tabListBtn.className = "px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 text-slate-700 hover:text-slate-900";
+      }
+    }
+
+    function initMap() {
+      map = L.map("map", {
+        center: [37.8685, -122.2820],
+        zoom: 14,
+        zoomControl: true
+      });
+
+      initBasemapLayers();
+
+      walkCircle = L.circle([ORIGIN.lat, ORIGIN.lng], {
+        radius: 804.67,
+        color: "#2563eb",
+        weight: 1.5,
+        dashArray: "6, 6",
+        fillColor: "#3b82f6",
+        fillOpacity: 0.06
+      }).addTo(map);
+
+      const originIcon = L.divIcon({
+        className: "",
+        html: `<div class="marker-pin origin-pulse" style="width:34px;height:34px;background:#2563eb;font-size:13px;" title="2060 Fourth St">★</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+        popupAnchor: [0, -18]
+      });
+
+      const originMarker = L.marker([ORIGIN.lat, ORIGIN.lng], { icon: originIcon, zIndexOffset: 900 }).addTo(map);
+      originMarker.bindPopup(`
+        <div class="text-xs">
+          <div class="font-bold text-blue-700 uppercase tracking-wide text-[10px]">Starting Point</div>
+          <div class="font-bold text-slate-900 text-sm mt-0.5">${ORIGIN.name}</div>
+          <div class="text-slate-600 mt-0.5">${ORIGIN.address}</div>
+          <div class="mt-1.5 text-slate-500">Dashed blue ring shows ~0.5 mi (10–11 min) walk radius.</div>
+        </div>
+      `);
+
+      renderAll();
+      fitVisibleMarkers();
+    }
+
+    function createPinIcon(item, isSelected) {
+      const meta = CATEGORY_META[item.categoryType];
+      const size = isSelected ? 34 : 28;
+      const activeClass = isSelected ? "active-pin" : "";
+      return L.divIcon({
+        className: "",
+        html: `<div class="marker-pin ${activeClass}" style="width:${size}px;height:${size}px;background:${meta.pinBg};">${item.rank}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2]
+      });
+    }
+
+    function buildPopupHtml(item) {
+      const meta = CATEGORY_META[item.categoryType];
+      return `
+        <div class="w-60 text-xs">
+          <div class="mb-1">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${meta.badgeBg}">#${item.rank} · ${meta.label}</span>
+          </div>
+          <div class="font-bold text-sm text-slate-900">${item.name}</div>
+          <div class="text-slate-500 font-medium">${item.cuisine} · ${item.rating}</div>
+          <div class="mt-1.5 text-slate-700"><strong>Distance:</strong> ${item.travelText}</div>
+          <div class="text-slate-700"><strong>Sat Hours:</strong> ${item.satHours}</div>
+          <p class="mt-1.5 text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-200">${item.highlight}</p>
+          <div class="mt-2 flex items-center gap-2">
+            <a href="${item.directionsUrl}" target="_blank" rel="noopener noreferrer" class="flex-1 text-center py-1.5 px-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold no-underline" style="color:white;">Directions</a>
+            <a href="${item.website}" target="_blank" rel="noopener noreferrer" class="py-1.5 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold no-underline">Menu</a>
+          </div>
+        </div>
+      `;
+    }
+
+    function drawRouteLineTo(item) {
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+      const showLine = document.getElementById("toggleRouteLine").checked;
+      if (!showLine || !item) return;
+
+      const meta = CATEGORY_META[item.categoryType];
+      routeLine = L.polyline(
+        [
+          [ORIGIN.lat, ORIGIN.lng],
+          [item.lat, item.lng]
+        ],
+        {
+          color: meta.pinBg,
+          weight: 3.5,
+          dashArray: item.walkable ? "6, 8" : null,
+          opacity: 0.85
+        }
+      ).addTo(map);
+    }
+
+    function updateBanner(item) {
+      const banner = document.getElementById("activeSpotBanner");
+      if (!item) {
+        banner.classList.add("hidden");
+        return;
+      }
+      const meta = CATEGORY_META[item.categoryType];
+      const badge = document.getElementById("bannerBadge");
+      badge.className = `inline-block px-2 py-0.5 rounded text-[10px] font-bold ${meta.badgeBg}`;
+      badge.textContent = `#${item.rank} · ${item.travelText}`;
+
+      document.getElementById("bannerTitle").textContent = item.name;
+      document.getElementById("bannerAddress").textContent = `${item.address} · Sat: ${item.satHours}`;
+      document.getElementById("bannerHighlight").textContent = item.highlight;
+      document.getElementById("bannerDirectionsLink").href = item.directionsUrl;
+      document.getElementById("bannerWebsiteLink").href = item.website;
+
+      banner.classList.remove("hidden");
+    }
+
+    function selectSpot(id, panMap = true) {
+      activeSpotId = id;
+      const item = RESTAURANTS.find(r => r.id === id);
+
+      Object.keys(markersById).forEach(rid => {
+        const rObj = RESTAURANTS.find(r => r.id === rid);
+        if (rObj && markersById[rid]) {
+          markersById[rid].setIcon(createPinIcon(rObj, rid === id));
+        }
+      });
+
+      document.querySelectorAll(".spot-card").forEach(card => {
+        if (card.dataset.id === id) {
+          card.classList.add("ring-2", "ring-amber-500", "bg-amber-50/40");
+        } else {
+          card.classList.remove("ring-2", "ring-amber-500", "bg-amber-50/40");
+        }
+      });
+
+      if (item && map) {
+        drawRouteLineTo(item);
+        updateBanner(item);
+        if (panMap && markersById[id]) {
+          setDrawerOpen(false);
+          map.flyTo([item.lat, item.lng], Math.max(map.getZoom(), 15), {
+            duration: 0.55
+          });
+          markersById[id].openPopup();
+        }
+      }
+    }
+
+    function renderAll() {
+      const filtered = getFilteredRestaurants();
+      const listEl = document.getElementById("spotList");
+      const statusEl = document.getElementById("resultsStatus");
+      const drawerBadge = document.getElementById("drawerCountBadge");
+
+      statusEl.textContent = `Showing ${filtered.length} of ${RESTAURANTS.length} spots (closest first)`;
+      drawerBadge.textContent = filtered.length;
+
+      Object.values(markersById).forEach(m => map.removeLayer(m));
+      markersById = {};
+
+      filtered.forEach(item => {
+        const isSelected = item.id === activeSpotId;
+        const marker = L.marker([item.lat, item.lng], {
+          icon: createPinIcon(item, isSelected),
+          zIndexOffset: isSelected ? 1000 : 100
+        }).addTo(map);
+
+        marker.bindPopup(buildPopupHtml(item));
+        marker.on("click", () => {
+          selectSpot(item.id, false);
+        });
+        markersById[item.id] = marker;
+      });
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-center py-10 px-4 text-slate-500 text-xs">
+            No spots match this filter. Tap <strong>All</strong> above to reset.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(item => {
+        const meta = CATEGORY_META[item.categoryType];
+        const isSelected = item.id === activeSpotId;
+        return `
+          <div data-id="${item.id}" class="spot-card group cursor-pointer rounded-xl border border-slate-200 p-3 transition hover:border-slate-300 hover:shadow-sm bg-white ${isSelected ? 'ring-2 ring-amber-500 bg-amber-50/40' : ''}">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style="background:${meta.pinBg}">
+                  ${item.rank}
+                </span>
+                <div>
+                  <h3 class="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-blue-600 transition">${item.name}</h3>
+                  <p class="text-[11px] text-slate-500">${item.cuisine} · <span class="text-amber-600 font-semibold">${item.rating}</span></p>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700 shrink-0">
+                ${item.travelText}
+              </span>
+            </div>
+
+            <p class="mt-1.5 text-xs text-slate-700 leading-snug">
+              ${item.highlight}
+            </p>
+
+            <div class="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${meta.badgeBg}">${meta.label}</span>
+              <div class="flex items-center gap-2 shrink-0">
+                <a href="${item.website}" target="_blank" rel="noopener noreferrer" class="spot-ext-link text-slate-600 hover:text-slate-900 font-medium underline">Site</a>
+                <a href="${item.directionsUrl}" target="_blank" rel="noopener noreferrer" class="spot-ext-link inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold">
+                  Route ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".spot-card").forEach(card => {
+        card.addEventListener("click", (e) => {
+          if (e.target.closest(".spot-ext-link")) return;
+          selectSpot(card.dataset.id, true);
+        });
+      });
+    }
+
+    function fitVisibleMarkers() {
+      if (!map) return;
+      const filtered = getFilteredRestaurants();
+      const latLngs = [[ORIGIN.lat, ORIGIN.lng]];
+      filtered.forEach(item => latLngs.push([item.lat, item.lng]));
+      if (latLngs.length > 1) {
+        const bounds = L.latLngBounds(latLngs);
+        map.fitBounds(bounds, { paddingTopLeft: [30, 80], paddingBottomRight: [30, 60], maxZoom: 15 });
+      } else {
+        map.setView([ORIGIN.lat, ORIGIN.lng], 15);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      updateFilterCounts();
+      initMap();
+
+      // View switcher buttons
+      document.getElementById("tabMapBtn").addEventListener("click", () => setDrawerOpen(false));
+      document.getElementById("tabListBtn").addEventListener("click", () => setDrawerOpen(true));
+      document.getElementById("closeDrawerBtn").addEventListener("click", () => setDrawerOpen(false));
+
+      // Filter pills
+      document.querySelectorAll(".filter-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          currentFilter = btn.dataset.filter;
+          document.querySelectorAll(".filter-btn").forEach(b => {
+            b.classList.remove("bg-slate-900", "text-white", "ring-2", "ring-slate-900");
+          });
+          btn.classList.add("ring-2", "ring-slate-900");
+          renderAll();
+          fitVisibleMarkers();
+        });
+      });
+
+      // Search input inside drawer
+      document.getElementById("searchInput").addEventListener("input", (e) => {
+        searchQuery = e.target.value;
+        renderAll();
+      });
+
+      // Reset view button
+      document.getElementById("resetViewBtn").addEventListener("click", () => {
+        activeSpotId = null;
+        if (routeLine) {
+          map.removeLayer(routeLine);
+          routeLine = null;
+        }
+        updateBanner(null);
+        map.closePopup();
+        setDrawerOpen(false);
+        renderAll();
+        fitVisibleMarkers();
+      });
+
+      // Close active spot banner
+      document.getElementById("closeBannerBtn").addEventListener("click", () => {
+        updateBanner(null);
+      });
+
+      // Walk ring toggle
+      document.getElementById("toggleRings").addEventListener("change", (e) => {
+        if (e.target.checked) {
+          walkCircle.addTo(map);
+        } else {
+          map.removeLayer(walkCircle);
+        }
+      });
+
+      // Route line toggle
+      document.getElementById("toggleRouteLine").addEventListener("change", () => {
+        const item = RESTAURANTS.find(r => r.id === activeSpotId);
+        drawRouteLineTo(item);
+      });
+
+      // Basemap selector
+      document.getElementById("basemapSelect").addEventListener("change", (e) => {
+        setBasemap(e.target.value);
+      });
+    });
+  </script>
+</body>
+</html>
